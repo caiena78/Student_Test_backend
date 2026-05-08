@@ -800,4 +800,103 @@ router.get('/reassign/:testId', async (req, res) => {
   }
 });
 
+// ─── PRINT JOBS ──────────────────────────────────────────────────────────────
+
+// POST /:testId/print-jobs — generate N printable versions of a test
+router.post('/:testId/print-jobs', async (req, res) => {
+  try {
+    const { testId } = req.params;
+    const n = parseInt(req.body.numberOfVersions, 10);
+
+    if (!Number.isInteger(n) || n < 1 || n > 50) {
+      return res.status(400).json({ error: 'numberOfVersions must be an integer between 1 and 50' });
+    }
+
+    const [tests] = await db.execute('SELECT * FROM tests WHERE id = ?', [testId]);
+    if (!tests.length) return res.status(404).json({ error: 'Test not found' });
+    if (tests[0].teacher_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const test = tests[0];
+
+    // Create job row first so we can mark failed on error
+    const [jobResult] = await db.execute(
+      `INSERT INTO print_jobs (test_id, teacher_id, status, number_of_versions)
+       VALUES (?, ?, 'pending', ?)`,
+      [testId, req.user.id, n]
+    );
+    const jobId = jobResult.insertId;
+
+    try {
+      // Snapshot the test questions at this point in time
+      const [questions] = await db.execute(
+        'SELECT * FROM questions WHERE test_id = ? ORDER BY order_index ASC',
+        [testId]
+      );
+      const [options] = await db.execute(
+        `SELECT qo.* FROM question_options qo
+         JOIN questions q ON q.id = qo.question_id
+         WHERE q.test_id = ? ORDER BY qo.order_index ASC`,
+        [testId]
+      );
+      const [ddItems] = await db.execute(
+        `SELECT ddi.* FROM drag_drop_items ddi
+         JOIN questions q ON q.id = ddi.question_id
+         WHERE q.test_id = ? ORDER BY ddi.correct_position ASC`,
+        [testId]
+      );
+
+      const questionsSnap = questions.map(q => ({
+        ...q,
+        options: options.filter(o => o.question_id === q.id),
+        drag_drop_items: ddItems.filter(d => d.question_id === q.id),
+      }));
+
+      // Truncate title to keep version_name within VARCHAR(255)
+      const titleSlug = test.title.substring(0, 240);
+      const generatedAt = new Date().toISOString();
+
+      for (let i = 1; i <= n; i++) {
+        const versionName = `${titleSlug} - ${String(i).padStart(3, '0')}`;
+        const payload = {
+          test: {
+            id: test.id,
+            title: test.title,
+            title_image: test.title_image || null,
+            time_limit_minutes: test.time_limit_minutes || null,
+          },
+          questions: questionsSnap,
+          version_number: i,
+          version_name: versionName,
+          generated_at: generatedAt,
+        };
+        await db.execute(
+          `INSERT INTO print_job_versions (print_job_id, version_number, version_name, payload)
+           VALUES (?, ?, ?, ?)`,
+          [jobId, i, versionName, JSON.stringify(payload)]
+        );
+      }
+
+      await db.execute("UPDATE print_jobs SET status = 'completed' WHERE id = ?", [jobId]);
+    } catch (genErr) {
+      await db.execute(
+        "UPDATE print_jobs SET status = 'failed', error_message = ? WHERE id = ?",
+        [genErr.message, jobId]
+      );
+      throw genErr;
+    }
+
+    const [jobRows] = await db.execute('SELECT * FROM print_jobs WHERE id = ?', [jobId]);
+    const [versionRows] = await db.execute(
+      `SELECT id, version_number, version_name, created_at
+       FROM print_job_versions WHERE print_job_id = ? ORDER BY version_number ASC`,
+      [jobId]
+    );
+    res.status(201).json({ ...jobRows[0], versions: versionRows });
+  } catch (err) {
+    console.error('Create print job error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

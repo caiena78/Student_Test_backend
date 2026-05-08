@@ -1,6 +1,8 @@
 -- Safe migration for existing databases
 -- Run this against an existing edutest_db to add new columns and tables
 
+USE edutest_db;
+
 -- Add true_false to the questions.type ENUM (safe: existing rows are unaffected)
 ALTER TABLE questions
   MODIFY COLUMN type ENUM('multiple_choice','free_text','drag_drop','true_false') NOT NULL;
@@ -28,3 +30,35 @@ CREATE TABLE IF NOT EXISTS student_attempt_overrides (
   FOREIGN KEY (test_id) REFERENCES tests(id) ON DELETE CASCADE,
   FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- ─── PRINT JOBS ───────────────────────────────────────────────────────────────
+-- Teacher generates N printable versions of a test. Each version stores a
+-- frozen snapshot of the test so printed copies remain stable after edits.
+
+CREATE TABLE IF NOT EXISTS print_jobs (
+  id                 INT      PRIMARY KEY AUTO_INCREMENT,
+  test_id            INT      NOT NULL,
+  teacher_id         INT      NOT NULL,
+  status             ENUM('pending','completed','failed') NOT NULL DEFAULT 'pending',
+  number_of_versions INT      NOT NULL,
+  error_message      TEXT     DEFAULT NULL,
+  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pj_test    FOREIGN KEY (test_id)    REFERENCES tests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pj_teacher FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS print_job_versions (
+  id             INT          PRIMARY KEY AUTO_INCREMENT,
+  print_job_id   INT          NOT NULL,
+  version_number INT          NOT NULL,
+  version_name   VARCHAR(255) NOT NULL,
+  payload        JSON         NOT NULL,
+  created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_pjv_name (print_job_id, version_name),
+  CONSTRAINT fk_pjv_job FOREIGN KEY (print_job_id)
+    REFERENCES print_jobs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Rollback (run in reverse order if needed):
+-- DROP TABLE IF EXISTS print_job_versions;
+-- DROP TABLE IF EXISTS print_jobs;

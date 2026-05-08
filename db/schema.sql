@@ -221,5 +221,40 @@ CREATE TABLE IF NOT EXISTS student_attempt_overrides (
   CONSTRAINT fk_sao_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PRINT_JOBS
+-- Teacher generates N printable versions of a test. Versions store a frozen
+-- snapshot (payload JSON) so printed copies stay stable after test edits.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS print_jobs (
+  id                 INT      PRIMARY KEY AUTO_INCREMENT,
+  test_id            INT      NOT NULL,
+  teacher_id         INT      NOT NULL,
+  status             ENUM('pending','completed','failed') NOT NULL DEFAULT 'pending',
+  number_of_versions INT      NOT NULL,
+  error_message      TEXT     DEFAULT NULL,
+  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pj_test    FOREIGN KEY (test_id)    REFERENCES tests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pj_teacher FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- PRINT_JOB_VERSIONS
+-- One row per version within a print job.
+-- version_name: "{test title} - NNN" (3-digit padded, unique per job)
+-- payload: frozen snapshot of the test at generation time
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS print_job_versions (
+  id             INT          PRIMARY KEY AUTO_INCREMENT,
+  print_job_id   INT          NOT NULL,
+  version_number INT          NOT NULL,
+  version_name   VARCHAR(255) NOT NULL,
+  payload        JSON         NOT NULL,
+  created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_pjv_name (print_job_id, version_name),
+  CONSTRAINT fk_pjv_job FOREIGN KEY (print_job_id)
+    REFERENCES print_jobs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Re-enable FK checks
 SET FOREIGN_KEY_CHECKS = 1;

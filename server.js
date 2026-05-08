@@ -10,6 +10,7 @@ const adminRoutes = require('./routes/admin');
 const teacherRoutes = require('./routes/teacher');
 const testsRoutes = require('./routes/tests');
 const studentRoutes = require('./routes/student');
+const printRoutes = require('./routes/print');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -62,6 +63,8 @@ app.use('/api/teacher', authenticate, requireRole('teacher', 'admin'), teacherRo
 app.use('/api/tests', authenticate, requireRole('teacher', 'admin'), testsRoutes);
 
 app.use('/api/student', authenticate, requireRole('student'), studentRoutes);
+
+app.use('/api/print-jobs', authenticate, requireRole('teacher', 'admin'), printRoutes);
 
 // Image upload endpoint
 app.post('/api/upload', authenticate, upload.single('image'), (req, res) => {
