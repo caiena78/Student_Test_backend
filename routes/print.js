@@ -83,6 +83,46 @@ router.get('/:jobId', async (req, res) => {
   }
 });
 
+// DELETE /api/print-jobs/:jobId — delete a print job and ALL its versions
+// print_job_versions rows are removed automatically via ON DELETE CASCADE.
+router.delete('/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const [jobs] = await db.execute('SELECT * FROM print_jobs WHERE id = ?', [jobId]);
+    if (!jobs.length) return res.status(404).json({ error: 'Print job not found' });
+    if (jobs[0].teacher_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    await db.execute('DELETE FROM print_jobs WHERE id = ?', [jobId]);
+    res.json({ message: 'Print job deleted successfully' });
+  } catch (err) {
+    console.error('Delete print job error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/print-jobs/:jobId/versions/:versionId — delete a single version
+router.delete('/:jobId/versions/:versionId', async (req, res) => {
+  try {
+    const { jobId, versionId } = req.params;
+    const [jobs] = await db.execute('SELECT * FROM print_jobs WHERE id = ?', [jobId]);
+    if (!jobs.length) return res.status(404).json({ error: 'Print job not found' });
+    if (jobs[0].teacher_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const [versions] = await db.execute(
+      'SELECT id FROM print_job_versions WHERE id = ? AND print_job_id = ?',
+      [versionId, jobId]
+    );
+    if (!versions.length) return res.status(404).json({ error: 'Version not found' });
+    await db.execute('DELETE FROM print_job_versions WHERE id = ?', [versionId]);
+    res.json({ message: 'Version deleted successfully' });
+  } catch (err) {
+    console.error('Delete print job version error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/print-jobs/:jobId/versions/:versionId/print
 //   ?mode=test|key|answers_only
 //   &format=print|docx
