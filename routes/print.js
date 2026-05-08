@@ -1,10 +1,15 @@
 const router = require('express').Router();
-const db = require('../db');
+const path   = require('path');
+const db     = require('../db');
 const { buildPrintHtml } = require('../lib/printHtml');
 const { buildPrintDocx } = require('../lib/printDocx');
 
 const VALID_MODES   = ['test', 'key', 'answers_only'];
 const VALID_FORMATS = ['print', 'docx'];
+
+// Absolute path to uploads — passed to the DOCX builder so it can read
+// image files from disk without an HTTP round-trip.
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -102,7 +107,7 @@ router.get('/:jobId/versions/:versionId/print', async (req, res) => {
     const { version, payload } = result;
 
     if (format === 'docx') {
-      const buffer = await buildPrintDocx(payload, mode);
+      const buffer = await buildPrintDocx(payload, mode, UPLOADS_DIR);
       const filename = `${version.version_name}-${mode}.docx`
         .replace(/[^a-zA-Z0-9._\- ]/g, '_');
       res.setHeader(
