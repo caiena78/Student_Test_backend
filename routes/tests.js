@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const db = require('../db');
+const { seededRandom, shuffle } = require('../lib/randomize');
 
 // ─── TESTS CRUD ──────────────────────────────────────────────────────────────
 
@@ -857,6 +858,23 @@ router.post('/:testId/print-jobs', async (req, res) => {
       const generatedAt = new Date().toISOString();
 
       for (let i = 1; i <= n; i++) {
+        // Each version gets a unique deterministic seed so question and answer
+        // order differs between versions but is stable across re-prints of the
+        // same version — preventing students from copying a neighbour's paper.
+        const versionSeed = `print-${testId}-v${i}`;
+
+        // Shuffle question order for this version
+        const shuffledQuestions = shuffle(questionsSnap, seededRandom(versionSeed));
+
+        // Shuffle MC answer options per question for this version
+        const versionQuestions = shuffledQuestions.map(q => {
+          if (q.type !== 'multiple_choice' || !q.options || !q.options.length) return q;
+          return {
+            ...q,
+            options: shuffle(q.options, seededRandom(`${versionSeed}-q${q.id}`)),
+          };
+        });
+
         const versionName = `${titleSlug} - ${String(i).padStart(3, '0')}`;
         const payload = {
           test: {
@@ -865,7 +883,7 @@ router.post('/:testId/print-jobs', async (req, res) => {
             title_image: test.title_image || null,
             time_limit_minutes: test.time_limit_minutes || null,
           },
-          questions: questionsSnap,
+          questions: versionQuestions,
           version_number: i,
           version_name: versionName,
           generated_at: generatedAt,
