@@ -7,9 +7,14 @@ const { buildPrintDocx } = require('../lib/printDocx');
 const VALID_MODES   = ['test', 'key', 'answers_only'];
 const VALID_FORMATS = ['print', 'docx'];
 
-// Absolute path to uploads — passed to the DOCX builder so it can read
-// image files from disk without an HTTP round-trip.
+// Absolute path to uploads — passed to builders so they can read image files
+// from disk without an HTTP round-trip.
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+
+// Public-facing base URL used in the HTML <base href> tag so that any
+// root-relative fallback image paths (/uploads/…) resolve correctly when
+// the print page is opened as a blob: URL by the frontend.
+const PUBLIC_URL = process.env.PUBLIC_URL || '';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -158,9 +163,8 @@ router.get('/:jobId/versions/:versionId/print', async (req, res) => {
       return res.send(buffer);
     }
 
-    // format=print — return HTML
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const html = buildPrintHtml(payload, mode, baseUrl);
+    // format=print — return HTML (pass UPLOADS_DIR so images are embedded as data URIs)
+    const html = buildPrintHtml(payload, mode, PUBLIC_URL, UPLOADS_DIR);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {
